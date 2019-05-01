@@ -1,0 +1,325 @@
+---
+title: "cox model with 3days data"
+author: "JunmeiW"
+date: "2019-4-11日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+library(survival)
+library(KMsurv)
+library(RColorBrewer)
+library(survminer)
+```
+
+--------------------------**1. Building cox model using patients' first 3days data**----------------------
+
+
+```{r}
+library(sqldf)
+cicu_3day = sqldf("select * from cicu_7day where tstop<=72",row.names = TRUE)
+sicu_3day = sqldf("select * from sicu_7day where tstop<=72",row.names = TRUE)
+```
+
+```{r}
+length(unique(cicu_3day$icustay_id))
+length(unique(sicu_3day$icustay_id))
+```
+
+-- cm means cox minus some vars
+```{r}
+cicu_cm_3 <- coxph(Surv(tstart,tstop, status ) ~ (four_bin) + age_cat + gender + apache_cat + 
+                    charlson_score +furosemide + vaso_inotro, data = cicu_3day ) 
+cicu_cmz_3<- cox.zph(cicu_cm_3, transform = "identity") 
+print(cicu_cmz_3)
+```
+
+```{r fig, fig.height=4, fig.width=4}
+plot(cicu_cmz_3[13], df=2, xlim=c(0,72))
+abline(h = coef(cicu_cm_3)[13], lty = 2, col = "red")
+
+plot(cicu_cmz_3[7], df=2, xlim=c(0,72))
+abline(h = coef(cicu_cm_3)[7], lty = 2, col = "red")
+plot(cicu_cmz_3[3], df=2, xlim=c(0,72), ylim=c(-1,2))
+abline(h = coef(cicu_cm_3)[3], lty = 2, col = "red")
+```
+
+
+```{r}
+plot(cicu_cmz_3[11], df=2, xlim=c(0,72))
+abline(h = coef(cicu_cm_3)[11], lty = 2, col = "red")
+
+plot(cicu_cmz_3[1], df=2, xlim=c(0,72), ylim=c(0,0.5))
+abline(h = coef(cicu_cm_3)[1], lty = 2, col = "red")
+
+plot(cicu_cmz_3[2], df=2, xlim=c(0,72), ylim=c(0,0.5))
+abline(h = coef(cicu_cm_3)[2], lty = 2, col = "red")
+```
+
+
+
+```{r}
+time_cicu.3 <- update(cicu_cm_3,.~.+ model.matrix(~four_bin)[,c(2)]:(tstart)
+                      + model.matrix(~four_bin)[,c(3)]:(tstart)
+                      # + model.matrix(~four_bin)[,c(4)]:(tstart)
+                      + model.matrix(~age_cat)[,c(3)]:(tstart)
+                      + model.matrix(~age_cat)[,c(4)]:(tstart)
+                      + model.matrix(~apache_cat)[,c(4)]:(tstart)
+                      # + charlson_score:tstart
+                      + model.matrix(~vaso_inotro)[,c(-1)]:(tstart))
+
+summary(time_cicu.3)
+```
+
+
+```{r}
+library(ReporteRs)
+library(magrittr)
+tc = summary(time_cicu.3)
+
+# Prepare the columns
+HR <- round(exp(coef(time_cicu.3)), 3)
+CI <- round(exp(confint(time_cicu.3)), 3)
+P_value <- tc$coefficients[, c(5)]
+
+P_value <- round(P_value, 3)
+
+# Names the columns of CI
+colnames(CI) <- c("Lower Bound", "Higher Bound")
+
+# Bind columns together as dataset
+tablec <- as.data.frame(cbind(HR, CI,P_value))
+# The script
+docx( ) %>% 
+     addFlexTable(tablec %>%
+               FlexTable(header.cell.props = cellProperties( background.color = "#003366"),
+                    header.text.props = textBold(color = "white"),
+                    add.rownames = TRUE ) %>%
+               setZebraStyle(odd = "#DDDDDD", even = "#FFFFFF")) %>%
+     writeDoc(file = "data/update0405/table_cicu3day.docx")
+
+# write.csv(c3,"data/finalcox/cicu_coxfinal.csv")
+```
+
+```{r}
+forst_cicu <-  structure(list(
+    HR = c(NA,NA, tablec$HR[1:3],NA,tablec$HR[4:6],tablec$HR[7],NA,tablec$HR[8:10],tablec$HR[11:13]),
+    lower  = c(NA,NA, tablec$`Lower Bound`[1:3],NA,tablec$`Lower Bound`[4:6],tablec$`Lower Bound`[7],NA,
+    tablec$`Lower Bound`[8:10],tablec$`Lower Bound`[11:13]),
+    upper = c(NA,NA, tablec$`Higher Bound`[1:3],NA,tablec$`Higher Bound`[4:6],tablec$`Higher Bound`[7],NA,
+    tablec$`Higher Bound`[8:10],tablec$`Higher Bound`[11:13])
+    ),
+    .Names = c("HR","Lower_CI", "Upper_CI"), 
+    row.names = c(NA,"Potassium Category (≥4 and ≤5 mEq/L as reference)","≥3.5 and <4.0 mEq/L",
+"3.0 and <3.5 mEq/L",
+"3.0 mEq/L","Age(17~54 as reference)","54~65","65~76","76~91.4","Gender, male",
+"APACHE IV(< 35 as reference)",
+"35~47",
+"47~61",
+"61~211",
+"Charlson score",
+"furosemide usage (timeseries)",
+"vasopressor or inotropic medication usage(timeseries)"),
+    class = "data.frame")
+    
+    
+tabletext <- cbind(
+  c(NA,
+"Potassium Category (≥4 and ≤5  mEq/L as reference)",
+"≥3.5 and <4.0 mEq/L",
+"3.0 and <3.5 mEq/L",
+"3.0 mEq/L","Age(17~54 as reference)","54~65","65~76","76~91.4","Gender, male",
+"APACHE IV (< 35 as reference)",
+"35~47",
+"47~61",
+"61~211",
+"Charlson score",
+"furosemide usage (timeseries)",
+"vasopressor or inotropic medication usage(timeseries)"
+),
+  c("Lower_CI",NA, tablec$`Lower Bound`[1:3],NA,tablec$`Lower Bound`[4:6],tablec$`Lower Bound`[7],NA,
+    tablec$`Lower Bound`[8:10],tablec$`Lower Bound`[11:13]),
+  c("Upper_CI",NA,tablec$`Higher Bound`[1:3],NA,tablec$`Higher Bound`[4:6],tablec$`Higher Bound`[7],NA,
+    tablec$`Higher Bound`[8:10],tablec$`Higher Bound`[11:13]),
+  c("Hazard Ratio", NA,tablec$HR[1:3],NA,tablec$HR[4:6],tablec$HR[7],NA,
+    tablec$HR[8:10],tablec$HR[11:13])
+)
+```
+
+
+```{r}
+library(haven)
+library(forestplot)
+forst_cicu <- forst_cicu[0:5,]
+tabletext <- tabletext[0:5,]
+# tablec$P_value[tablec$P_value == '0.000'] <- '<0.001'
+
+pdf("data/update0405/results0409/cicu3day.pdf")
+forestplot(tabletext[,c(1,4)],
+                       mean = forst_cicu$HR, 
+                       lower = forst_cicu$Lower_CI,
+                       upper = forst_cicu$Upper_CI,
+                       # new_page = TRUE,
+           zero = 1,
+                       boxsize= 0.1,
+                       lineheight = "auto",linemargin = unit(5,"mm"),
+                       xticks = seq(0,2.5,0.5),
+                       # xlab = "Hazard Ratio with 95%CI",
+                       ci.vertices =T,
+                       txt_gp = fpTxtGp(ticks = gpar(cex = 0.9),
+                                        label = gpar(fontfamily = "Times"), cex = 0.8),
+                       # is.summary=c(TRUE,TRUE,rep(TRUE,8),TRUE),
+                       col = fpColors(box=c("royalblue"),
+                          line=c("darkblue"))
+                       
+                       )
+dev.off()
+```
+
+
+
+
+
+```{r}
+sicu_cm_3 <- coxph(Surv(tstart,tstop, status ) ~ (four_bin) + age_cat + gender + apache_cat + 
+                    charlson_score +furosemide + vaso_inotro, data = sicu_3day ) 
+sicu_cmz_3<- cox.zph(sicu_cm_3, transform = "identity") 
+print(sicu_cmz_3)
+```
+
+
+
+```{r}
+time_sicu3 <- update(sicu_cm_3,.~.+model.matrix(~four_bin)[,c(-1,-2,-4)]:(tstart)+
+                       model.matrix(~four_bin)[,c(-1,-2,-3)]:(tstop)+
+                       model.matrix(~age_cat)[,c(3)]:(tstart)+
+                       model.matrix(~age_cat)[,c(4)]:(tstart+1)+
+                       model.matrix(~apache_cat)[,c(4)]:(tstart)+
+                       model.matrix(~furosemide)[,c(-1)]:(tstart)+
+                       model.matrix(~vaso_inotro)[,c(-1)]:(tstart)
+                     )
+
+summary(time_sicu3)
+```
+
+
+```{r}
+library(ReporteRs)
+library(magrittr)
+sicu_m = summary(time_sicu3)
+sHR <- round(exp(coef(time_sicu3)), 3)
+sCI <- round(exp(confint(time_sicu3)), 3)
+sP_value <- round(sicu_m$coefficients[, c(5)],3)
+# Names the columns of CI
+colnames(sCI) <- c("Lower Bound", "Higher Bound")
+
+# Bind columns together as dataset
+table_sicu <- as.data.frame(cbind(sHR,sCI,sP_value))
+table_sicu 
+
+# The script
+docx( ) %>% 
+     addFlexTable(table_sicu %>%
+               FlexTable(header.cell.props = cellProperties( background.color = "#003366"),
+                    header.text.props = textBold(color = "white"),
+                    add.rownames = TRUE ) %>%
+               setZebraStyle(odd = "#DDDDDD", even = "#FFFFFF")) %>%
+     writeDoc(file = "data/update0405/table_sicu3day.docx")
+
+
+```
+
+```{r}
+sicu_m = summary(time_sicu3)
+HR <- round(exp(coef(time_sicu3)), 3)
+CI <- round(exp(confint(time_sicu3)), 3)
+P_value <- round(sicu_m$coefficients[, c(5)],3)
+# Names the columns of CI
+colnames(CI) <- c("Lower Bound", "Higher Bound")
+
+# Bind columns together as dataset
+table_sicu <- as.data.frame(cbind(HR,CI,P_value))
+```
+
+```{r}
+forst_sicu <-  structure(list(
+    HR = c(NA,NA, table_sicu$HR[1:3],NA,table_sicu$HR[4:6],table_sicu$HR[7],NA,
+           table_sicu$HR[8:10],table_sicu$HR[11:13]),
+    lower  = c(NA,NA, table_sicu$`Lower Bound`[1:3],NA,table_sicu$`Lower Bound`[4:6],
+               table_sicu$`Lower Bound`[7],NA,table_sicu$`Lower Bound`[8:10],
+               table_sicu$`Lower Bound`[11:13]),
+    upper = c(NA,NA, table_sicu$`Higher Bound`[1:3],NA,table_sicu$`Higher Bound`[4:6],
+              table_sicu$`Higher Bound`[7],NA,
+    table_sicu$`Higher Bound`[8:10],table_sicu$`Higher Bound`[11:13])),
+    .Names = c("HR","Lower_CI", "Upper_CI"), 
+    row.names = c(NA,"Potassium Category (≥4 and ≤5 mEq/L as reference)","3.5~4.0",
+"3.0~3.5",
+"<3","Age(17~50 as reference)","50~63","63~75","75~91.4","Gender, male",
+"APACHE IV(< 35 as reference)",
+"35~48",
+"48~64",
+"64~199",
+"Charlson score",
+"furosemide usage (timeseries)",
+"vasopressor or inotropic medication usage(timeseries)"),
+    class = "data.frame")
+    
+    
+tabletext <- cbind(
+  c(NA,
+"Potassium Category (≥4 and ≤5 mEq/L as reference)",
+"≥3.5 and <4.0 mEq/L",
+"≥3.0 and <3.5 mEq/L",
+"<3.0 mEq/L","Age(17~50 as reference)","50~63","63~75","75~91.4","Gender, male",
+"APACHE IV (< 35 as reference)",
+"35~48",
+"48~64",
+"64~199",
+"Charlson score",
+"furosemide usage (timeseries)",
+"vasopressor or inotropic medication usage(timeseries)"
+),
+  c("Lower_CI",NA, table_sicu$`Lower Bound`[1:3],NA,
+    table_sicu$`Lower Bound`[4:6],table_sicu$`Lower Bound`[7],NA,
+    table_sicu$`Lower Bound`[8:10],table_sicu$`Lower Bound`[11:13]),
+  c("Upper_CI",NA,table_sicu$`Higher Bound`[1:3],NA,table_sicu$`Higher Bound`[4:6],
+    table_sicu$`Higher Bound`[7],NA,
+    table_sicu$`Higher Bound`[8:10],table_sicu$`Higher Bound`[11:13]),
+  c("Hazard Ratio", NA,table_sicu$HR[1:3],NA,table_sicu$HR[4:6],table_sicu$HR[7],NA,
+    table_sicu$HR[8:10],table_sicu$HR[11:13])
+)
+```
+
+```{r}
+library(haven)
+library(forestplot)
+
+forst_sicu <- forst_sicu[0:5,]
+tabletext <- tabletext[0:5,]
+pdf("data/update0405/results0409/sicu3day.pdf")
+forestplot(tabletext[,c(1,4)],
+                       mean = forst_sicu$HR, 
+                       lower = forst_sicu$Lower_CI,
+                       upper = forst_sicu$Upper_CI,
+                       new_page = FALSE,
+                       boxsize= 0.1,
+                       zero = 1,
+                       lineheight = "auto",linemargin = unit(5,"mm"),
+                       xticks = seq(0,2.01,0.5),
+                       # xlab = "Hazard Ratio with 95%CI",
+                       ci.vertices =T,
+                       txt_gp = fpTxtGp(ticks = gpar(cex = 0.9),
+                                        label = gpar(fontfamily = "Times"), cex = 0.8),
+                       # is.summary=c(TRUE,TRUE,rep(TRUE,8),TRUE),
+                       col = fpColors(box=c("royalblue"),
+                          line=c("darkblue"))
+                       
+                       )
+dev.off()
+```

@@ -1,0 +1,110 @@
+---
+title: "Generate Tableone for AA paper(improve AA results based  on paper reviewers suggestion)"
+author: "JunmeiW"
+date: "2019-3-20日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "F:/mornin/2019-2plus/R_code2019/data/")
+```
+
+## Now we need to get the tableone for new data we have
+
+##1. set working directory
+```{r}
+library(readr)
+setwd("F:/.../2019-2plus/R_code2019/data/")
+```
+
+
+```{r}
+library(tidyverse)
+```
+
+
+
+## 2. get  basic data
+```{r}
+AA_basic_info <- read_csv("basic0409.csv")
+```
+
+```{r}
+colnames(AA_basic_info)
+```
+
+
+
+Table one 
+```{r}
+library(tableone)
+table_aa = unique(subset(AA_basic_info, select = c(icustay_id, age,gender, apache_iv, charlson_score,
+                                                aadrug_use,vaso_use_firstday,inotrope_use_firstday,
+                                                intubated_firstday,history_mi,history_chf,
+                                                history_renal_failure,admission_mi,admission_chf,
+                                                admission_renal_failure,admission_sepsis,unittype))) # unittype, 
+# length(table_7day$icu_los_hours)
+table_aa$aadrug_use = as.factor(table_aa$aadrug_use)
+vars = c("age","gender", "apache_iv", "charlson_score",
+         "vaso_use_firstday","inotrope_use_firstday","intubated_firstday","history_mi",
+         "history_chf","history_renal_failure","admission_mi","admission_chf",
+         "admission_renal_failure",'admission_sepsis')
+fac_var <- table_aa %>%
+  names %>% grep("first|admi|gender|hist", ., value = TRUE) 
+```
+
+## basic data
+```{r}
+library(sqldf)
+
+cicu_7day = sqldf("select * from table_aa where lower(unittype) like 'c%'",row.names = TRUE)
+sicu_7day = sqldf("select * from table_aa where lower(unittype) like 's%' or 
+                  lower(unittype) like 'm%'",row.names = TRUE)
+# length(unique(cicu_7day$icustay_id))
+```
+
+## CICU tableone
+```{r}
+library(tableone)
+
+## Create Table 1 stratified by aadrug_use
+c_tableOne <- CreateTableOne(vars = vars, strata = c("aadrug_use"), data = cicu_7day,
+                           factorVars = fac_var)
+
+c_tb7day <- print(c_tableOne, nonnormal =c("age","apache_iv","charlson_score"))
+# write.csv(c_tb7day,"c_tableone.csv")
+```
+
+## SICU tableone
+```{r}
+
+## Create Table 1 stratified by aadrug_use
+s_tableOne <- CreateTableOne(vars = vars, strata = c("aadrug_use"), data = sicu_7day,
+                           factorVars = fac_var)
+
+s_tb7day <- print(s_tableOne, nonnormal =c("age","apache_iv","charlson_score"))
+# write.csv(s_tb7day,"s_tableone.csv")
+```
+
+```{r}
+table_one_cs <- cbind(c_tb7day,s_tb7day)
+```
+
+
+```{r}
+library(ReporteRs)
+library(magrittr)
+# The script
+docx( ) %>% 
+     addFlexTable(table_one_cs %>%
+               FlexTable(header.cell.props = cellProperties( background.color = "#003311"),
+                    header.text.props = textBold(color = "white"),
+                    add.rownames = TRUE ) %>%
+               setZebraStyle(odd = "#DDDDDD", even = "#FFFFFF")) %>%
+     writeDoc(file = "table_one.docx")
+
+```
+
+
+
