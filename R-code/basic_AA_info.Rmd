@@ -27,7 +27,7 @@ library(tidyverse)
 
 ## 2. get  basic data
 ```{r}
-AA_basic_info <- read_csv("basic0409.csv")
+AA_basic_info <- read_csv("AA_baseline_info.csv")
 ```
 
 ```{r}
